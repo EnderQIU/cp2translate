@@ -2,7 +2,7 @@
 Translate Japanese text from clipboard.
 
 ## Installation
-The script is written for Windows, but dependencies support all platform.
+This script is written for Windows, but can support all platform with a little modification.
 
 1. Python 37 on Windows 10.
 2. Upgrade pip by `pip install -U pip`.
