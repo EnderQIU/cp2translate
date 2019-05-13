@@ -2,5 +2,6 @@ boto3==1.9.71
 mecab-python-windows==0.996.1
 pyperclip==1.7.0
 requests==2.21.0
-pygame==1.9.6
+pydub==0.23.1
 pycryptodome==3.8.1
+python-i18n==0.3.6

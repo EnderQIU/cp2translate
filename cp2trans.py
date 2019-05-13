@@ -1,4 +1,6 @@
 import os
+import io
+import re
 import sys
 import time
 import json
@@ -8,21 +10,25 @@ import getpass
 import logging
 import hashlib
 import argparse
+import subprocess
 import configparser
+from datetime import datetime
+from multiprocessing import Process
 
 import boto3
 import MeCab
+import i18n
+import pydub
 import romkan
 import requests
 import pyperclip
-#import simpleaudio
 from Crypto.Cipher import AES
+from pydub.playback import play
+
 
 # region consts
 YOUDAO_API_HTTPS = 'https://openapi.youdao.com/api'
-YOUDAO_API_ERROR = 'Youdao API error: {}'
 YOUDAO_TTSAPI_HTTPS = 'https://openapi.youdao.com/ttsapi'
-YOUDAO_TTS_ERROR = 'Youdao TTS API error: {}'
 DEFAULT_SECTION = 'default'  # This section name is preserved.
 # All available source language codes, should be the intersection of youdao and aws translate.
 SOURCE_ALL = ('ja', )
@@ -30,141 +36,108 @@ SOURCE_ALL = ('ja', )
 TARGET_YOUDAO = ('zh-CHS', )
 # AWS translate supported languages.
 TARGET_AWS = ('en', )
-ACCESS_READONLY_PROPERTY = 'Attempt to set a readonly property "{}".'
 DIVIDING_TITLE = '- '*10+'{} '+'- '*10
 DIVIDING_LINE = '= '*25
 TEST_STRING = '8月3日に放送された「中居正広の金曜日のスマイルたちへ」(TBS系)で、1日たった5分で' \
               'ぽっこりおなかを解消するというダイエット方法を紹介。キンタロー。のダイエットにも密着。'
-CREATE_A_NOT_EXISTS_FILE = 'File "{}" not exists. Will create a new one when exit.'
-WRONG_PASSWORD = 'Failed to load "{}" with a wrong password.'
-PASSWORD_NOT_SPECIFIED = '"{}" maybe encrypted. Use --encrypt option to specify password.'
-FILE_NOT_FOUND = 'File "{}" not found.'
+CONFIG_INI = 'config.ini'
+API_TOLERATED_DELAY = 1.0  # If API request period is greater than it, log an info.
+config = configparser.ConfigParser()
+config.read(os.path.join(os.path.dirname(__file__), CONFIG_INI))
+# endregion
+
+# region i18n
+i18n.load_path.append(os.path.join(os.path.dirname(__file__), 'lang'))
+i18n.set('filename_format', '{locale}.{format}')
+i18n.set('locale', config.get('global', 'language'))
+# Only logger.info and print content supports l18n.
+PROGRAM_DESCRIPTION = i18n.t('PROGRAM_DESCRIPTION')
+YOUDAO_API_ERROR = i18n.t('YOUDAO_API_ERROR')
+YOUDAO_TTS_ERROR = i18n.t('YOUDAO_TTS_ERROR')
+CREATE_A_NOT_EXISTS_FILE  = i18n.t('CREATE_A_NOT_EXISTS_FILE')
+ACCESS_READONLY_PROPERTY = i18n.t('ACCESS_READONLY_PROPERTY')
+WRONG_PASSWORD = i18n.t('WRONG_PASSWORD')
+PASSWORD_NOT_SPECIFIED = i18n.t('PASSWORD_NOT_SPECIFIED')
+FILE_NOT_FOUND = i18n.t('FILE_NOT_FOUND')
+FOLDER_NOT_FOUND = i18n.t('FOLDER_NOT_FOUND')
+SECTION_NOT_FOUND = i18n.t('SECTION_NOT_FOUND')
+SAVING_TO_PLEASE_WAIT = i18n.t('SAVING_TO_PLEASE_WAIT')
+SECTION_IS_PRESERVED = i18n.t('SECTION_IS_PRESERVED')
+CHOOSE_A_TARGET = i18n.t('CHOOSE_A_TARGET')
+INPUT_OLD_PASSWORD = i18n.t('INPUT_OLD_PASSWORD')
+INPUT_NEW_PASSWORD = i18n.t('INPUT_NEW_PASSWORD')
+INPUT_PASSWORD_TO_ENCRYPT = i18n.t('INPUT_PASSWORD_TO_ENCRYPT')
+INPUT_PASSWORD_TO_DECRYPT = i18n.t('INPUT_PASSWORD_TO_DECRYPT')
+DONE = i18n.t('DONE')
+START_AGTH_FROM = i18n.t('START_AGTH_FROM')
+INVALID_TARGET = i18n.t('INVALID_TARGET')
+LOG_WONT_BE_SAVED = i18n.t('LOG_WONT_BE_SAVED')
+TTS_PLAYING_WITH_VOICE = i18n.t('TTS_PLAYING_WITH_VOICE')
+REQUEST_FINISHED_IN = i18n.t('REQUEST_FINISHED_IN')
+HELP_PASSED = i18n.t('HELP_PASSED')
+HELP_PROFILE = i18n.t('HELP_PROFILE')
+HELP_LOG = i18n.t('HELP_LOG')
+HELP_ENCRYPT = i18n.t('HELP_ENCRYPT')
+HELP_TTS = i18n.t('HELP_TTS')
+HELP_MATCH = i18n.t('HELP_MATCH')
+HELP_SOURCE = i18n.t('HELP_SOURCE')
+HELP_TARGET = i18n.t('HELP_TARGET')
+HELP_DISABLE = i18n.t('HELP_DISABLE')
+HELP_INTERVAL = i18n.t('HELP_INTERVAL')
+HELP_AGTH = i18n.t('HELP_AGTH')
+HELP_OPT = i18n.t('HELP_OPT')
 # endregion
 
 # region global vars
 aws_client = boto3.client('translate')
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-if not os.path.exists(os.path.join('C:\\', 'neologd')):
-    logger.error('NEologd dictionary folder not found. Please checkout "README.md".')
+if not os.path.exists(os.path.join(os.path.dirname(__file__), CONFIG_INI)):
+    logger.error(FILE_NOT_FOUND.format(CONFIG_INI))
     exit(1)
-mecab_wakati = MeCab.Tagger('-Owakati -d C:\\neologd')
-mecab_chasen = MeCab.Tagger('-Ochasen -d C:\\neologd')
-# endregion
-
-# region configparser
-config = configparser.ConfigParser()
-if not os.path.exists(os.path.join(os.path.dirname(__file__), 'config.ini')):
-    logger.error('"config.ini" not found. Copy one from the "config.example.ini" file.')
-    exit(1)
-config.read(os.path.join(os.path.dirname(__file__), 'config.ini'))
 try:
     appid = config.get("global", "appid")
     secretkey = config.get("global", "secretkey")
+    neologd_path = config.get('global', 'neologd')
+    program_language = config.get('global', 'language')
 except configparser.NoSectionError as e:
     logger.error(e.message)
     exit(1)
 if config.has_section(DEFAULT_SECTION):
-    logger.error('Section name "{}" is preserved. Try another name.'.format(DEFAULT_SECTION))
+    logger.error(SECTION_IS_PRESERVED.format(DEFAULT_SECTION))
     exit(1)
+if not os.path.exists(neologd_path):
+    logger.error(FOLDER_NOT_FOUND.format(neologd_path))
+    exit(1)
+mecab_wakati = MeCab.Tagger('-Owakati -d '+neologd_path)
+mecab_chasen = MeCab.Tagger('-Ochasen -d '+neologd_path)
 # endregion
 
 # region argparse
-parser = argparse.ArgumentParser(prog='cp2trans', description='Clipboard to Translate.')
+parser = argparse.ArgumentParser(prog='cp2trans', description=PROGRAM_DESCRIPTION)
 # region passwd
-parser.add_argument('--passwd',
-                    dest='passwd',
-                    required=False,
-                    metavar='log_file',
-                    help='Change password of an encrypted log_file or encrypt/decrypt log_file and exit.'
-                    )
+parser.add_argument('--passwd', dest='passwd', metavar='log_file', help=HELP_PASSED)
 # endregion
 # region profile
-parser.add_argument('-p', '--profile',
-                    dest='profile',
-                    required=False,
-                    metavar='section',
-                    help='Load profiled options from the specified section of "config.ini" file.'
-                         ' Any other options from command line will be ignored. See details in "config.example.ini".')
+parser.add_argument('-p', '--profile', dest='profile', metavar='section', help=HELP_PROFILE)
 # endregion
 # region logger
-parser.add_argument('-l', '--log',
-                    dest='log',
-                    required=False,
-                    metavar='log_file',
-                    help='Save and read translation history from "log_file" to save API calls.'
-                         ' File name will be "profile.encrypted.log" if encrypted.'
-                    )
-parser.add_argument('-e', '--encrypt',
-                    dest='encrypt',
-                    required=False,
-                    metavar='password',
-                    help='Encrypt logfile if you don\'t want it too exposed ;P.'
-                         ' Have to be specified while loading an encrypted log file.'
-                    )
+parser.add_argument('-l', '--log', dest='log', metavar='log_file', help=HELP_LOG)
+parser.add_argument('-e', '--encrypt', dest='encrypt', metavar='password', help=HELP_ENCRYPT)
 # endregion
 # region tts
-parser.add_argument('-v', '--voice',
-                    dest='voice',
-                    required=False,
-                    choices=('0', '1',),
-                    default='0',
-                    help='Voice of TTS. "0" for male and "1" for female. Unset for disable TTS.'
-                    )
-parser.add_argument('-m', '--match',
-                    dest='match',
-                    required=False,
-                    metavar='pattern',
-                    default=None,
-                    help='Only TTS when match <pattern>.'
-                    )
+parser.add_argument('-v', '--voice', dest='voice', choices=('0', '1',), default='0', help=HELP_TTS)
+parser.add_argument('-m', '--match', dest='match', metavar='pattern', default=None, help=HELP_MATCH)
 # endregion
 # region translation
-parser.add_argument('-s', '--source',
-                    dest='source',
-                    required=False,
-                    metavar='lang_code',
-                    default='ja',
-                    help='Source language code. Romkan will only be shown with "ja".'
-                    )
-parser.add_argument('-t', '--target',
-                    dest='target',
-                    required=False,
-                    metavar='lang_code',
-                    default='zh-CHS,en',
-                    help='Primary uses Youdao API and the secondary by AWS translate API.'
-                    )
-parser.add_argument('-d', '--disable',
-                    dest='disable',
-                    required=False,
-                    action='store_true',
-                    default=False,
-                    help='Disable AWS translate api in low network connection environment.' \
-                         ' Log won\'t be recorded into disk (but will be in memory) if set.'
-                    )
+parser.add_argument('-s', '--source', dest='source', metavar='lang_code', default='ja', help=HELP_SOURCE)
+parser.add_argument('-t', '--target', dest='target', metavar='lang_code', default='zh-CHS,en', help=HELP_TARGET)
+parser.add_argument('-d', '--disable', dest='disable', action='store_true', default=False, help=HELP_DISABLE)
 # endregion
 # region text hook
-parser.add_argument('-i', '--interval',
-                    dest='interval',
-                    required=False,
-                    metavar='seconds',
-                    type=float,
-                    default=1.0,
-                    help='Time interval in seconds to check the clipboard.'
-                    )
-parser.add_argument('-a', '--agth',
-                    dest='agth',
-                    required=False,
-                    metavar='agth_path',
-                    help='Start AGTH text hook.'
-                         ' We will search current directory to find "agth.exe" if path is not specified.'
-                         ' You might also have to specify -o option.')
-parser.add_argument('-o', '--opt',
-                    dest='opt',
-                    required=False,
-                    metavar='agth_opts',
-                    help='Extra options passed to agth.exe.'
-                         ' See details by the help button of agth.exe window.')
+parser.add_argument('-i', '--interval', dest='interval', metavar='seconds', type=float, default=1.0, help=HELP_INTERVAL)
+parser.add_argument('-a', '--agth', dest='agth', metavar='agth_path', help=HELP_AGTH)
+parser.add_argument('-o', '--opt', dest='opt', metavar='agth_opts', help=HELP_OPT)
 # endregion
 # endregion
 
@@ -189,7 +162,12 @@ def youdao_translate(text, target='zh-CHS', source='ja'):
         'salt': salt,
         'sign': sign,
     }
+    start_time = datetime.now()
     r = requests.get(YOUDAO_API_HTTPS, params=params)
+    period = (datetime.now() - start_time).seconds
+    logger.debug('Youdao API finished API request in {} seconds'.format(period))
+    if period > API_TOLERATED_DELAY:
+        logger.info(REQUEST_FINISHED_IN.format('Youdao API', period))
     if r.ok and 'application/json' in r.headers['Content-type']:
         return json.loads(r.text)['translation'][0]
     else:
@@ -198,30 +176,45 @@ def youdao_translate(text, target='zh-CHS', source='ja'):
 
 
 def youdao_tts(text, voice='1', lang_type='ja'):
+    if text == '':
+        return
     salt, sign = gen_salt_and_sign(text)
     params = {
         'appKey': appid,
         'q': urllib.parse.quote(text.encode('utf-8')),
-        'lang_type': lang_type,
+        'langType': lang_type,
         'salt': salt,
         'sign': sign,
         'format': 'mp3',
         'voice': voice
     }
-    r = requests.get(YOUDAO_API_HTTPS, params=params)
+    start_time = datetime.now()
+    r = requests.get(YOUDAO_TTSAPI_HTTPS, params=params)
+    period = (datetime.now() - start_time).seconds
+    logger.debug('Youdao TTS finished API request in {} seconds'.format(period))
+    if period > API_TOLERATED_DELAY:
+        logger.info(REQUEST_FINISHED_IN.format('Youdao TTS', period))
     if r.ok and 'audio/mp3' in r.headers['Content-Type']:
-        return r.content
+        data = io.BytesIO(r.content)
+        tts = pydub.AudioSegment.from_file(data, format="mp3")
+        logger.info(TTS_PLAYING_WITH_VOICE.format(voice))
+        play(tts)
+        logger.debug('TTS playing finished normally.')
     elif 'application/json' in r.headers['Content-Type']:
         logger.error(YOUDAO_TTS_ERROR.format(json.loads(r.text)['errorCode']))
     else:
         logger.error(YOUDAO_TTS_ERROR.format(r.status_code))
-    return None
 
 
 def aws_translate(text, target='en', source='ja'):
+    start_time = datetime.now()
     result_dict = aws_client.translate_text(Text=text,
                                             SourceLanguageCode=source,
                                             TargetLanguageCode=target)
+    period = (datetime.now() - start_time).seconds
+    logger.debug('AWS finished API request in {} seconds'.format(period))
+    if period > API_TOLERATED_DELAY:
+        logger.info(REQUEST_FINISHED_IN.format('AWS', period))
     return result_dict.get('TranslatedText', None)
 # endregion
 
@@ -241,12 +234,14 @@ def align(value):
 
 
 def encrypt(ascii_safe_text, key):
+    # str => bytes
     assert isinstance(ascii_safe_text, str)
     aes = AES.new(align(key), AES.MODE_ECB)
     return aes.encrypt(align(ascii_safe_text))
 
 
 def decrypt(cipher, key):
+    # bytes => str
     assert isinstance(cipher, bytes)
     aes = AES.new(align(key), AES.MODE_ECB)
     return aes.decrypt(align(cipher)).decode('ascii').rstrip()
@@ -263,19 +258,21 @@ def passwd(filepath):
     if not os.path.isfile(filepath):
         logger.error(FILE_NOT_FOUND.format(filepath))
         exit(1)
-    target = input('Choose a target: [C]hange password, [E]ncrypt or [D]ecrypt? ')
+    target = input(CHOOSE_A_TARGET)
     if target == 'C':
-        old_password = getpass.getpass('Input old password (won\'t be displayed):')
+        old_password = getpass.getpass(INPUT_OLD_PASSWORD)
         with open(filepath, 'rb') as f:
             try:
                 log = json.loads(decrypt(f.read(), old_password))
             except (UnicodeDecodeError, json.decoder.JSONDecodeError):
                 logger.error(WRONG_PASSWORD.format(filepath))
                 exit(1)
-        new_password = getpass.getpass('Input new password (won\'t be displayed):')
-        with open(rename(filepath, '(encrypted)'), 'wb') as f:
+        new_password = getpass.getpass(INPUT_NEW_PASSWORD)
+        new_filepath = rename(filepath, '(encrypted)')
+        logger.info(SAVING_TO_PLEASE_WAIT.format(new_filepath))
+        with open(new_filepath, 'wb') as f:
             f.write(encrypt(json.dumps(log), new_password))
-        logger.info('Success!')
+        logger.info(DONE)
     elif target == 'E':
         with open(filepath, 'r') as f:
             try:
@@ -283,23 +280,27 @@ def passwd(filepath):
             except (UnicodeDecodeError, json.decoder.JSONDecodeError):
                 logger.error(PASSWORD_NOT_SPECIFIED.format(filepath))
                 exit(1)
-        with open(rename(filepath, '(encrypted)'), 'wb') as f:
-            password = getpass.getpass('Input a password to encrypt "{}".'.format(filepath))
+        new_filepath = rename(filepath, '(encrypted)')
+        logger.info(SAVING_TO_PLEASE_WAIT.format(new_filepath))
+        with open(new_filepath, 'wb') as f:
+            password = getpass.getpass(INPUT_PASSWORD_TO_ENCRYPT.format(filepath))
             f.write(encrypt(json.dumps(log).encode(ascii), password))
-        logger.info('Success!')
+        logger.info(DONE)
     elif target == 'D':
-        password = getpass.getpass('Input a password to decrypt "{}".'.format(filepath))
+        password = getpass.getpass(INPUT_PASSWORD_TO_DECRYPT.format(filepath))
         with open(filepath, 'rb') as f:
             try:
                 log = json.loads(decrypt(f.read(), password))  # Still need to be json.loads to validate password.
             except (UnicodeDecodeError, json.decoder.JSONDecodeError):
                 logger.error(WRONG_PASSWORD.format(filepath))
                 exit(1)
-        with open(rename(filepath, '(decrypted)'), 'w') as f:
-            f.write(decrypt(json.dumps(log).encode('ascii'), password))
-        logger.info('Success!')
+        new_filepath = rename(filepath, '(decrypted)')
+        logger.info(SAVING_TO_PLEASE_WAIT.format(new_filepath))
+        with open(new_filepath, 'w') as f:
+            f.write(json.dumps(log))
+        logger.info(DONE)
     else:
-        logger.error('Invalid target "{}". Exit.')
+        logger.error(INVALID_TARGET.format(target))
         exit(1)
 # endregion
 
@@ -307,12 +308,15 @@ def passwd(filepath):
 # region main loop
 def main_loop(profile):
     paste = pyperclip.paste()
+    tts_thread = None
     while True:
         if paste == pyperclip.paste():
+            logger.debug('Same paste, continue...')
             continue
         paste = pyperclip.paste()
         # region from log
         if paste in profile.log:
+            logger.debug('Found paste from log. Use record.')
             print(DIVIDING_TITLE.format('SOURCE (from log)'))
             print(profile.log[paste]['source'])
             if 'romkan' in profile.log[paste]:
@@ -322,6 +326,17 @@ def main_loop(profile):
             print(profile.log[paste]['youdao'])
             print(DIVIDING_TITLE.format('AWS (from log)'))
             print(profile.log[paste]['aws'])
+            if profile.voice:
+                if profile.match and re.search(profile.match, paste) or profile.match is None:
+                    logger.debug('"{}" matches in paste. Continue...'.format(profile.match))
+                    if tts_thread:
+                        tts_thread.kill()
+                        logger.debug('Previous TTS process killed.')
+                    tts_thread = Process(target=youdao_tts, args=(paste, profile.voice, profile.source))
+                    tts_thread.start()
+                    logger.debug('TTS process starts.')
+                else:
+                    logger.debug('"{}" does not match in paste. Pass...'.format(profile.match))
             print(DIVIDING_LINE)
             continue
         # endregion
@@ -336,8 +351,16 @@ def main_loop(profile):
         # endregion
         # region tts
         if profile.voice:
-            pass
-            #TODO
+            if profile.match and re.search(profile.match, paste) or profile.match is None:
+                logger.debug('"{}" matches in paste. Continue...'.format(profile.match))
+                if tts_thread:
+                    tts_thread.kill()
+                    logger.debug('Previous TTS process killed.')
+                tts_thread = Process(target=youdao_tts, args=(paste, profile.voice, profile.source))
+                tts_thread.start()
+                logger.debug('TTS process starts.')
+            else:
+                logger.debug('"{}" does not match in paste. Pass...'.format(profile.match))
         # endregion
         # region romkan
         if profile.source == 'ja':
@@ -365,7 +388,6 @@ def main_loop(profile):
             aws = aws_translate(paste, target=profile.target[1], source=profile.source)
             print(aws)
         # endregion
-
         # region save log (in memory)
         profile.log[paste] = {}
         profile.log[paste]['source'] = source
@@ -391,7 +413,7 @@ class Profile:
         # region overwrite options
         if section:
             if not config.has_section(section):
-                logger.error('No such section "{}" in "config.ini"'.format(args.profile))
+                logger.error(SECTION_NOT_FOUND.format(args.profile))
                 exit(1)
             log = config.get(section, 'log', fallback=section+'.json')
             encrypt = config.get(section, 'encrypt', fallback=None)
@@ -462,8 +484,12 @@ class Profile:
         # endregion
         # region init interval, agth, opt
         self._interval = interval
-        self._agth = agth if agth else os.path.join(__file__, 'agth.exe')
-        self._opt = opt
+        self._agth = agth
+        self._opt = opt if opt else ''
+        if self._agth:
+            cmd = agth + opt
+            logger.info(START_AGTH_FROM.format(cmd))
+            subprocess.Popen([agth]+opt.split(' '))
         # endregion
     # endregion
 
@@ -571,7 +597,7 @@ class Profile:
     # region public functions
     def save_log(self):
         if self._disable:
-            logger.info('The "--disable" option triggerd. So logs won\'t be saved.')
+            logger.info(LOG_WONT_BE_SAVED)
             return
         if self._encrypt:
             with open(self._log_filename, 'wb') as f:
@@ -594,7 +620,7 @@ if __name__ == "__main__":
     try:
         main_loop(profile)
     except KeyboardInterrupt:
-        logger.info('Saving to "{}". Please wait...'.format(profile.log_filename))
+        logger.info(SAVING_TO_PLEASE_WAIT.format(profile.log_filename))
         profile.save_log()  # save log in disk.
-        logger.info('done.')
+        logger.info(DONE)
 # endregion

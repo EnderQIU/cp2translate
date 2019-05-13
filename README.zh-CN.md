@@ -1,13 +1,13 @@
 # cp2trans
-Translate Japanese text from clipboard.
+翻译来自剪贴板的文本内容。您需要将设置`config.ini`文件中`[global]`节的`language`属性为`zh-CN`，将本程序的语言变更为中文。
 
-- [中文文档](README.zh-CN.md)
+- [English Document](README.md)
 
-## Installation
+## 安装
 This script is written for Windows. Believe it's a hard way to setup but an easy one to use :).
 
 1. Python 37 on Windows 10.
-2. Upgrade pip by `pip install -U pip`. 
+2. Upgrade pip by `pip install -U pip`.
 3. Install `aws-cli` from <https://aws.amazon.com/cli/> and initiate aws by `aws configure`.
 4. Install MeCab from <https://github.com/ikegami-yukino/mecab/releases/tag/v0.996>. Add the `/bin` directory $PATH.
 5. Make additional dictionary by [mecab-ipadic-neologd](https://github.com/neologd/mecab-ipadic-neologd).
@@ -33,43 +33,34 @@ usage: cp2trans [-h] [--passwd log_file] [-p section] [-l log_file]
                 [-e password] [-v {0,1}] [-m pattern] [-s lang_code]
                 [-t lang_code] [-d] [-i seconds] [-a agth_path] [-o agth_opts]
 
-Clipboard to Translate.
+翻译来自剪贴板的内容。
 
 optional arguments:
   -h, --help            show this help message and exit
-  --passwd log_file     Change password of an encrypted log_file or
-                        encrypt/decrypt log_file and exit.
+  --passwd log_file     更改被加密的 log_file 的密码，或者对其进行加密/解密。
   -p section, --profile section
-                        Load profiled options from the specified section of
-                        "config.ini" file. Any other options from command line
-                        will be ignored. See details in "config.example.ini".
+                        从 "config.ini" 中读取配置。任何来自命令行的其余参数将会被覆盖。您可以在
+                        "config.example.ini" 文件中获取详情。
   -l log_file, --log log_file
-                        Save and read translation history from "log_file" to
-                        save API calls.
+                        保存记录至 "log_file"，这样做可以节约您的 API 调用次数。
   -e password, --encrypt password
-                        Encrypt logfile if you don't want it too exposed ;P.
-                        Have to be specified while loading an encrypted log
-                        file.
+                        加密记录文件。读取一个被加密的记录文件时也需要指定此选项。
   -v {0,1}, --voice {0,1}
-                        Voice of TTS. "0" for male and "1" for female. Unset
-                        for disable TTS.
+                        TTS 所使用的语音。"0" 代表男性发音，"1"代表女性发音。不设置此选项则不会启用 TTS 功能。
   -m pattern, --match pattern
-                        Only TTS when match <pattern>.
+                        仅当源文本匹配 pattern 时进行 TTS。
   -s lang_code, --source lang_code
-                        Source language code. Romkan will only be shown with
-                        "ja".
+                        源文字语言代码。仅当此选项为 "ja" 时，会显示罗马音。
   -t lang_code, --target lang_code
-                        Primary uses Youdao API and the secondary by AWS
-                        translate API.
-  -d, --disable         Disable AWS translate api in low network connection
-                        environment. Log won't be recorded into disk (but will
-                        be in memory) if set.
+                        目标语言代码。前一个目标语言使用有道智云 API，后一个使用 AWS Translate API。
+  -d, --disable         激活此选项以在网络状况不佳的情况下禁用 AWS Translate
+                        APT。如果这样做也会导致记录不会被保存至磁盘（但会暂存于内存）。
   -i seconds, --interval seconds
-                        Time interval in seconds to check the clipboard.
+                        检查剪贴板内容是否发生变化的时间间隔。
   -a agth_path, --agth agth_path
-                        Start AGTH text hook. "agth_path" must be specified.
-                        You might also have to specify -o option.
+                        启动 AGTH 文本提取进程。必须指定 AGTH 可执行文件的路径。您很可能需要同时指定 "-o,
+                        --opt" 选项。
   -o agth_opts, --opt agth_opts
-                        Extra options passed to "agth.exe". See details by the
-                        help button of "agth.exe" window.
+                        "agth.exe" 的额外启动参数。您可以通过点击 "agth.exe" 程序窗口的 "help"
+                        按钮获取详情。
 ```
