@@ -4,6 +4,7 @@ import time
 import json
 import urllib
 import random
+import getpass
 import logging
 import hashlib
 import argparse
@@ -34,12 +35,18 @@ DIVIDING_TITLE = '- '*10+'{} '+'- '*10
 DIVIDING_LINE = '= '*25
 TEST_STRING = '8月3日に放送された「中居正広の金曜日のスマイルたちへ」(TBS系)で、1日たった5分で' \
               'ぽっこりおなかを解消するというダイエット方法を紹介。キンタロー。のダイエットにも密着。'
+CREATE_A_NOT_EXISTS_FILE = 'File "{}" not exists. Will create a new one when exit.'
+WRONG_PASSWORD = 'Failed to load "{}" with a wrong password.'
+PASSWORD_NOT_SPECIFIED = '"{}" maybe encrypted. Use --encrypt option to specify password.'
+FILE_NOT_FOUND = 'File "{}" not found.'
 # endregion
 
 # region global vars
 aws_client = boto3.client('translate')
-if not os.path.exists(os.path.join('c:', 'neologd')):
-    logging.error('NEologd dictionary folder not found. Please checkout "README.md".')
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+if not os.path.exists(os.path.join('C:\\', 'neologd')):
+    logger.error('NEologd dictionary folder not found. Please checkout "README.md".')
     exit(1)
 mecab_wakati = MeCab.Tagger('-Owakati -d C:\\neologd')
 mecab_chasen = MeCab.Tagger('-Ochasen -d C:\\neologd')
@@ -48,22 +55,30 @@ mecab_chasen = MeCab.Tagger('-Ochasen -d C:\\neologd')
 # region configparser
 config = configparser.ConfigParser()
 if not os.path.exists(os.path.join(os.path.dirname(__file__), 'config.ini')):
-    logging.error('"config.ini" not found. Copy one from the "config.example.ini" file.')
+    logger.error('"config.ini" not found. Copy one from the "config.example.ini" file.')
     exit(1)
 config.read(os.path.join(os.path.dirname(__file__), 'config.ini'))
 try:
     appid = config.get("global", "appid")
     secretkey = config.get("global", "secretkey")
 except configparser.NoSectionError as e:
-    logging.error(e.message)
+    logger.error(e.message)
     exit(1)
 if config.has_section(DEFAULT_SECTION):
-    logging.error('Section name "{}" is preserved. Try another name.'.format(DEFAULT_SECTION))
+    logger.error('Section name "{}" is preserved. Try another name.'.format(DEFAULT_SECTION))
     exit(1)
 # endregion
 
 # region argparse
 parser = argparse.ArgumentParser(prog='cp2trans', description='Clipboard to Translate.')
+# region passwd
+parser.add_argument('--passwd',
+                    dest='passwd',
+                    required=False,
+                    metavar='log_file',
+                    help='Change password of an encrypted log_file or encrypt/decrypt log_file and exit.'
+                    )
+# endregion
 # region profile
 parser.add_argument('-p', '--profile',
                     dest='profile',
@@ -119,6 +134,14 @@ parser.add_argument('-t', '--target',
                     default='zh-CHS,en',
                     help='Primary uses Youdao API and the secondary by AWS translate API.'
                     )
+parser.add_argument('-d', '--disable',
+                    dest='disable',
+                    required=False,
+                    action='store_true',
+                    default=False,
+                    help='Disable AWS translate api in low network connection environment.' \
+                         ' Log won\'t be recorded into disk (but will be in memory) if set.'
+                    )
 # endregion
 # region text hook
 parser.add_argument('-i', '--interval',
@@ -170,7 +193,7 @@ def youdao_translate(text, target='zh-CHS', source='ja'):
     if r.ok and 'application/json' in r.headers['Content-type']:
         return json.loads(r.text)['translation'][0]
     else:
-        logging.error(YOUDAO_API_ERROR.format(r.status_code))
+        logger.error(YOUDAO_API_ERROR.format(r.status_code))
         return None
 
 
@@ -189,9 +212,9 @@ def youdao_tts(text, voice='1', lang_type='ja'):
     if r.ok and 'audio/mp3' in r.headers['Content-Type']:
         return r.content
     elif 'application/json' in r.headers['Content-Type']:
-        logging.error(YOUDAO_TTS_ERROR.format(json.loads(r.text)['errorCode']))
+        logger.error(YOUDAO_TTS_ERROR.format(json.loads(r.text)['errorCode']))
     else:
-        logging.error(YOUDAO_TTS_ERROR.format(r.status_code))
+        logger.error(YOUDAO_TTS_ERROR.format(r.status_code))
     return None
 
 
@@ -205,25 +228,79 @@ def aws_translate(text, target='en', source='ja'):
 
 # region crypto
 def align(value):
-    assert isinstance(value, str)
-
+    if isinstance(value, str):
+        value = value.encode('ascii')
+    elif isinstance(value, bytes):
+        pass
+    else:
+        logger.critical('align() only accept str and bytes.')
+        exit(1)
     while len(value) % 16 != 0:
-        value += ' '
+        value += b' '
     return value
 
 
-def encrypt(json_obj, key):
-    assert isinstance(json_obj, dict)
-
-    aes = AES.new(align(key), AES.MODE_CBC)
-    return aes.encrypt(json.dumps(json_obj))
+def encrypt(ascii_safe_text, key):
+    assert isinstance(ascii_safe_text, str)
+    aes = AES.new(align(key), AES.MODE_ECB)
+    return aes.encrypt(align(ascii_safe_text))
 
 
 def decrypt(cipher, key):
     assert isinstance(cipher, bytes)
+    aes = AES.new(align(key), AES.MODE_ECB)
+    return aes.decrypt(align(cipher)).decode('ascii').rstrip()
 
-    aes = AES.new(align(key), AES.MODE_CBC)
-    return json.loads(aes.decrypt(cipher))
+
+# a.b.txt => a.b(insert_text).txt
+# Or abc => abc(insert_text) if dot not found
+def rename(filepath, insert_text):
+    path, ext = os.path.splitext(filepath)
+    return path+insert_text+ext
+
+
+def passwd(filepath):
+    if not os.path.isfile(filepath):
+        logger.error(FILE_NOT_FOUND.format(filepath))
+        exit(1)
+    target = input('Choose a target: [C]hange password, [E]ncrypt or [D]ecrypt? ')
+    if target == 'C':
+        old_password = getpass.getpass('Input old password (won\'t be displayed):')
+        with open(filepath, 'rb') as f:
+            try:
+                log = json.loads(decrypt(f.read(), old_password))
+            except (UnicodeDecodeError, json.decoder.JSONDecodeError):
+                logger.error(WRONG_PASSWORD.format(filepath))
+                exit(1)
+        new_password = getpass.getpass('Input new password (won\'t be displayed):')
+        with open(rename(filepath, '(encrypted)'), 'wb') as f:
+            f.write(encrypt(json.dumps(log), new_password))
+        logger.info('Success!')
+    elif target == 'E':
+        with open(filepath, 'r') as f:
+            try:
+                log = json.loads(f.read())
+            except (UnicodeDecodeError, json.decoder.JSONDecodeError):
+                logger.error(PASSWORD_NOT_SPECIFIED.format(filepath))
+                exit(1)
+        with open(rename(filepath, '(encrypted)'), 'wb') as f:
+            password = getpass.getpass('Input a password to encrypt "{}".'.format(filepath))
+            f.write(encrypt(json.dumps(log).encode(ascii), password))
+        logger.info('Success!')
+    elif target == 'D':
+        password = getpass.getpass('Input a password to decrypt "{}".'.format(filepath))
+        with open(filepath, 'rb') as f:
+            try:
+                log = json.loads(decrypt(f.read(), password))  # Still need to be json.loads to validate password.
+            except (UnicodeDecodeError, json.decoder.JSONDecodeError):
+                logger.error(WRONG_PASSWORD.format(filepath))
+                exit(1)
+        with open(rename(filepath, '(decrypted)'), 'w') as f:
+            f.write(decrypt(json.dumps(log).encode('ascii'), password))
+        logger.info('Success!')
+    else:
+        logger.error('Invalid target "{}". Exit.')
+        exit(1)
 # endregion
 
 
@@ -257,6 +334,11 @@ def main_loop(profile):
             source = paste
             print(source)
         # endregion
+        # region tts
+        if profile.voice:
+            pass
+            #TODO
+        # endregion
         # region romkan
         if profile.source == 'ja':
             print(DIVIDING_TITLE.format('ROMKAN'))
@@ -276,14 +358,14 @@ def main_loop(profile):
         # endregion
         # region aws
         print(DIVIDING_TITLE.format('AWS'))
-        aws = aws_translate(paste, target=profile.target[1], source=profile.source)
-        print(aws)
+        if profile.disable:
+            logger.info('The "--disable" option is set. Pass aws translate.')
+            aws = None
+        else:
+            aws = aws_translate(paste, target=profile.target[1], source=profile.source)
+            print(aws)
         # endregion
-        # region tts
-        if profile.voice:
-            pass
-            #TODO
-        # endregion
+
         # region save log (in memory)
         profile.log[paste] = {}
         profile.log[paste]['source'] = source
@@ -299,17 +381,23 @@ def main_loop(profile):
 # region profile
 class Profile:
 
+    # region type hints
+    _log: dict
+    _log_filename: str
+    # endregion
+
     # region constructor and destructor
-    def __init__(self, section, log, encrypt, voice, match, source, target, interval, agth, opt):
+    def __init__(self, section, log, encrypt, voice, match, disable, source, target, interval, agth, opt):
         # region overwrite options
         if section:
             if not config.has_section(section):
-                logging.error('No such section "{}" in "config.ini"'.format(args.profile))
+                logger.error('No such section "{}" in "config.ini"'.format(args.profile))
                 exit(1)
             log = config.get(section, 'log', fallback=section+'.json')
             encrypt = config.get(section, 'encrypt', fallback=None)
             voice = config.get(section, 'voice', fallback='0')
             match = config.get(section, 'match', fallback=None)
+            disable = config.get(section, 'disable', fallback=False)
             source = config.get(section, 'source', fallback='ja')
             target = config.get(section, 'target', fallback='zh-CHS,en')
             interval = config.getfloat(section, 'interval', fallback=1.0)
@@ -319,19 +407,27 @@ class Profile:
             self._section = DEFAULT_SECTION
         # endregion
         # region init log, encrypt
-        self._encrypt = None
-        if log:
+        self._encrypt = encrypt
+        if log and not os.path.isfile(log):
+            logger.info(CREATE_A_NOT_EXISTS_FILE.format(log))
             self._log_filename = log
-            if not os.path.isfile(log):
-                logging.error('File "{}" not found.'.format(log))
-                exit(1)
+            self._log = {}
+        elif log:
+            self._log_filename = log
             if encrypt:
-                self._encrypt = encrypt
                 with open(os.path.join(os.path.dirname(__file__), log), 'rb') as f:
-                    self._log = json.loads(decrypt(f.read(), encrypt))
+                    try:
+                        self._log = json.loads(decrypt(f.read(), encrypt))
+                    except (UnicodeDecodeError, json.decoder.JSONDecodeError):
+                        logger.error(WRONG_PASSWORD.format(log))
+                        exit(1)
             else:
                 with open(os.path.join(os.path.dirname(__file__), log), 'r') as f:
-                    self._log = json.loads(f.read())
+                    try:
+                        self._log = json.loads(f.read())
+                    except (UnicodeDecodeError, json.decoder.JSONDecodeError):
+                        logger.error(PASSWORD_NOT_SPECIFIED.format(log))
+                        exit(1)
         else:
             self._log_filename = DEFAULT_SECTION + '.json'
             if os.path.exists(os.path.join(os.path.dirname(__file__), self._log_filename)):
@@ -342,23 +438,24 @@ class Profile:
         # endregion
         # region init tts, voice
         if voice and voice not in ('0', '1'):
-            logging.warning('--voice option "{}" might be invalid.'.format(voice))
+            logger.warning('--voice option "{}" might be invalid.'.format(voice))
         self._voice = voice
         self._match = match
         # endregion
-        # region init source, target
+        # region init disable, source, target
+        self._disable = disable
         if source not in SOURCE_ALL:
-            logging.error('--source option "{}" is not supported.'.format(source))
+            logger.error('--source option "{}" is not supported.'.format(source))
             exit(1)
         targets = target.split(',')
         if len(targets) != 2:
-            logging.error('--target option "{}" format error.'.format(target))
+            logger.error('--target option "{}" format error.'.format(target))
             exit(1)
         if targets[0] not in TARGET_YOUDAO:
-            logging.error('--target option "{}" not supported by youdao.'.format(targets[0]))
+            logger.error('--target option "{}" not supported by youdao.'.format(targets[0]))
             exit(1)
         if targets[1] not in TARGET_AWS:
-            logging.error('--target option "{}" not supported by aws.'.format(targets[1]))
+            logger.error('--target option "{}" not supported by aws.'.format(targets[1]))
             exit(1)
         self._source = source
         self._target = (targets[0], targets[1], )
@@ -374,13 +471,21 @@ class Profile:
     @property
     def section(self):
         if self._section == DEFAULT_SECTION:
-            logging.warning('Cannot call default section. Continue...')
+            logger.warning('Cannot call default section. Continue...')
             return None
         return self._section
 
     @section.setter
     def section(self, value):
-        logging.warning(ACCESS_READONLY_PROPERTY.format('section'))
+        logger.warning(ACCESS_READONLY_PROPERTY.format('section'))
+
+    @property
+    def log_filename(self):
+        return self._log_filename
+    
+    @log_filename.setter
+    def log_filename(self, value):
+        logger.warning(ACCESS_READONLY_PROPERTY.format('log_filename'))
 
     @property
     def log(self):
@@ -396,7 +501,7 @@ class Profile:
 
     @encrypt.setter
     def encrypt(self, value):
-        logging.warning(ACCESS_READONLY_PROPERTY.format('encrypt'))
+        logger.warning(ACCESS_READONLY_PROPERTY.format('encrypt'))
 
     @property
     def voice(self):
@@ -404,7 +509,7 @@ class Profile:
 
     @voice.setter
     def voice(self, value):
-        logging.warning(ACCESS_READONLY_PROPERTY.format('voice'))
+        logger.warning(ACCESS_READONLY_PROPERTY.format('voice'))
 
     @property
     def match(self):
@@ -412,7 +517,15 @@ class Profile:
 
     @match.setter
     def match(self, value):
-        logging.warning(ACCESS_READONLY_PROPERTY.format('match'))
+        logger.warning(ACCESS_READONLY_PROPERTY.format('match'))
+
+    @property
+    def disable(self):
+        return self._disable
+    
+    @disable.setter
+    def disable(self, value):
+        logger.warning(ACCESS_READONLY_PROPERTY.format('disable'))
 
     @property
     def source(self):
@@ -420,7 +533,7 @@ class Profile:
 
     @source.setter
     def source(self, value):
-        logging.warning(ACCESS_READONLY_PROPERTY.format('source'))
+        logger.warning(ACCESS_READONLY_PROPERTY.format('source'))
 
     @property
     def target(self):
@@ -428,7 +541,7 @@ class Profile:
 
     @target.setter
     def target(self, value):
-        logging.warning(ACCESS_READONLY_PROPERTY.format('target'))
+        logger.warning(ACCESS_READONLY_PROPERTY.format('target'))
 
     @property
     def interval(self):
@@ -436,7 +549,7 @@ class Profile:
 
     @interval.setter
     def interval(self, value):
-        logging.warning(ACCESS_READONLY_PROPERTY.format('interval'))
+        logger.warning(ACCESS_READONLY_PROPERTY.format('interval'))
 
     @property
     def agth(self):
@@ -444,7 +557,7 @@ class Profile:
 
     @agth.setter
     def agth(self, value):
-        logging.warning(ACCESS_READONLY_PROPERTY.format('agth'))
+        logger.warning(ACCESS_READONLY_PROPERTY.format('agth'))
 
     @property
     def opt(self):
@@ -452,11 +565,14 @@ class Profile:
 
     @opt.setter
     def opt(self, value):
-        logging.warning(ACCESS_READONLY_PROPERTY.format('opt'))
+        logger.warning(ACCESS_READONLY_PROPERTY.format('opt'))
     # endregion
 
     # region public functions
     def save_log(self):
+        if self._disable:
+            logger.info('The "--disable" option triggerd. So logs won\'t be saved.')
+            return
         if self._encrypt:
             with open(self._log_filename, 'wb') as f:
                 f.write(encrypt(json.dumps(self._log), self.encrypt))
@@ -470,12 +586,15 @@ class Profile:
 # region program entry
 if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
-    profile = Profile(args.profile, args.log, args.encrypt, args.voice, args.match, args.source, args.target,
-                      args.interval, args.agth, args.opt)
+    if args.passwd:
+        passwd(args.passwd)
+        exit(0)
+    profile = Profile(args.profile, args.log, args.encrypt, args.voice, args.match,
+                      args.disable, args.source, args.target, args.interval, args.agth, args.opt)
     try:
         main_loop(profile)
     except KeyboardInterrupt:
-        logging.info('Saving to "{}.log". Please wait...')
+        logger.info('Saving to "{}". Please wait...'.format(profile.log_filename))
         profile.save_log()  # save log in disk.
-        logging.info('done.')
+        logger.info('done.')
 # endregion

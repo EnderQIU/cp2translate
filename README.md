@@ -12,7 +12,7 @@ This script is written for Windows. Believe it's a hard way to setup but an easy
  Since it's hard to build on Windows 10, I suggest build it on Ubuntu WSL and copy all the files under
  `/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd` into `C:\neologd\` if you want the newest dictionary.
  [Here](neologd/)'s a pre-built dictionary on 2019-05-11.
-6. **NOTICE:** We use `pydub` to play TTS mp3 audio. We won't save mp3 file so you should be careful of its costs.
+6. **NOTICE:** We use `pygame` to play TTS mp3 audio. We won't save mp3 file so you should be careful of its costs.
 7. Install requirements by `pip install -r requirements.txt`. If your system default encoding is not UTF-8, you might
  fail on installing the `romkan` package. Usually neither `chcp` nor `locale.setdefaultencoding()` won't solve this
  problem. I suggest manually download [romkan source code](https://github.com/soimort/python-romkan) and replace line 12
