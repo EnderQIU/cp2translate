@@ -4,28 +4,23 @@
 - [English Document](README.md)
 
 ## 安装
-This script is written for Windows. Believe it's a hard way to setup but an easy one to use :).
+这个软件是配合agth文本提取器使用的，所以仅针对Windows平台测试过，但其余平台应该也能支持。安装过程虽然复杂但是值得一试。
 
-1. Python 37 on Windows 10.
-2. Upgrade pip by `pip install -U pip`.
-3. Install `aws-cli` from <https://aws.amazon.com/cli/> and initiate aws by `aws configure`.
-4. Install MeCab from <https://github.com/ikegami-yukino/mecab/releases/tag/v0.996>. Add the `/bin` directory $PATH.
-5. Make additional dictionary by [mecab-ipadic-neologd](https://github.com/neologd/mecab-ipadic-neologd).
- Since it's hard to build on Windows 10, I suggest build it on Ubuntu WSL and copy all the files under
- `/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd` into `C:\neologd\` if you want the newest dictionary.
- [Here](neologd/)'s a pre-built dictionary on 2019-05-11.
-6. **NOTICE:** We use `pydub`'s ffmpeg binding to play TTS mp3 audio. If you want to enable TTS, download ffmpeg from
- <https://ffmpeg.zeranoe.com/builds/> or just ignore the warning. We won't save mp3 so you should mind of its costs.
-7. Install requirements by `pip install -r requirements.txt`. If your system default encoding is not UTF-8, you might
- fail on installing the `romkan` package. Usually neither `chcp` nor `locale.setdefaultencoding()` won't solve this
- problem. I suggest manually download [romkan source code](https://github.com/soimort/python-romkan) and replace line 12
- `README = open(os.path.join(here, 'README.rst')).read()` to
- `README = open(os.path.join(here, 'README.rst'), encoding="utf-8").read()`. Then run `python .\setup.py install`.
-8. Copy a file of `config.ini.example` and rename it to `config.ini`. Fill in the `appid` and the `secretkey`, make sure
- `Natural Language Translation` of this app is enabled.
-9. Run the script by `python .\cp2trans.py`.
+1. 在Windows 10上安装Python37。
+2. 升级一下pip `pip install -U pip`.
+3. 安装 `aws-cli`，可以在此处下载最新版本<https://aws.amazon.com/cli/>。安装后使用`aws configure`命令初始化一下。需要一个具有aws tranlate接口调用的身份。
+4. 安装 MeCab，可以从此处获取安装包 <https://github.com/ikegami-yukino/mecab/releases/tag/v0.996>。安装后需要手动将安装目录下的 `/bin` 目录加入 $PATH环境变量。
+5. 如果需要更好的日语分词结果，建议下载 [mecab-ipadic-neologd](https://github.com/neologd/mecab-ipadic-neologd)。然后在 WSL 上编译最新的字典，拷贝`/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd` 里面的所有内容到 `C:\neologd\`。
+6. **注意：** 我们使用pydub库播放TTS合成的音频，它需要下载ffmpeg，官方网站是这个
+ <https://ffmpeg.zeranoe.com/builds/>。安装后需要把安装目录下的`bin`目录加入环境变量。如果不需要TTS功能的话，忽略程序的警告即可。我们没有对音频文件做缓存，所以请注意这个接口调用的消费。
+7. 安装依赖 `pip install -r requirements.txt`。通常中文系统会因为编码问题在安装`romkan`这个包时失败。网上的`chcp`命令或者是 `locale.setdefaultencoding()`一般解决不了这个问题。我建议下载[romkan 源码](https://github.com/soimort/python-romkan)然后替换第12行的
+ `README = open(os.path.join(here, 'README.rst')).read()`为 `README = open(os.path.join(here, 'README.rst'), encoding="utf-8").read()`，然后用 `python .\setup.py install`手动安装。
+8. 复制一份 `config.ini.example`文件然后重命名为 `config.ini`。填写有道智云的 `appid`和 `secretkey`，这个有道智云的App需要具有自然语言翻译的接口调用权限。
+9. 安装完成，使用`python .\cp2trans.py`运行脚本。
 
-## Usage
+## 用法
+
+你可以使用 `-h` 选项来查看脚本支持的功能。将`config.ini`文件中`[global]`节的`language`属性设置为`zh-CN`，将本程序的语言变更为中文。
 
 ```powershell
 PS C:\cp2translate> python .\cp2trans.py -h
