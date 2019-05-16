@@ -1,5 +1,5 @@
 # cp2trans
-Translate Japanese text from clipboard.
+Translate text from clipboard.
 
 - [中文文档](README.zh-CN.md)
 
