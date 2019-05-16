@@ -17,7 +17,7 @@ en:
  INPUT_PASSWORD_TO_ENCRYPT: "Input a password to encrypt \"{}\" (won't be displayed): "
  INPUT_PASSWORD_TO_DECRYPT: "Input the password to decrypt \"{}\" (won't be displayed): "
  DONE: "done."
- START_AGTH_FROM: "Start agth from: \"{}\""
+ START_AGTH_FROM: "Start agth from: \"{}\" with parameters: \"{}\""
  INVALID_TARGET: "Invalid target \"{}\". Exit."
  LOG_WONT_BE_SAVED: "The \"--disable\" option triggered. So logs won't be saved."
  TTS_PLAYING_WITH_VOICE: "TTS starts playing with voice \"{}\"."

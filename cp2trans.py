@@ -43,7 +43,7 @@ TEST_STRING = '8月3日に放送された「中居正広の金曜日のスマイ
 CONFIG_INI = 'config.ini'
 API_TOLERATED_DELAY = 1.0  # If API request period is greater than it, log an info.
 config = configparser.ConfigParser()
-config.read(os.path.join(os.path.dirname(__file__), CONFIG_INI))
+config.read(os.path.join(os.path.dirname(__file__), CONFIG_INI), encoding='utf8')
 # endregion
 
 # region i18n
@@ -137,7 +137,7 @@ parser.add_argument('-d', '--disable', dest='disable', action='store_true', defa
 # region text hook
 parser.add_argument('-i', '--interval', dest='interval', metavar='seconds', type=float, default=1.0, help=HELP_INTERVAL)
 parser.add_argument('-a', '--agth', dest='agth', metavar='agth_path', help=HELP_AGTH)
-parser.add_argument('-o', '--opt', dest='opt', metavar='agth_opts', help=HELP_OPT)
+parser.add_argument('-o', '--opt', dest='opt', metavar='agth_opts', default='', help=HELP_OPT)
 # endregion
 # endregion
 
@@ -424,7 +424,7 @@ class Profile:
             target = config.get(section, 'target', fallback='zh-CHS,en')
             interval = config.getfloat(section, 'interval', fallback=1.0)
             agth = config.get(section, 'agth', fallback=None)
-            opt = config.get(section, 'opt', fallback=None)
+            opt = config.get(section, 'opt', fallback='')
         else:
             self._section = DEFAULT_SECTION
         # endregion
@@ -488,7 +488,7 @@ class Profile:
         self._opt = opt if opt else ''
         if self._agth:
             cmd = agth + opt
-            logger.info(START_AGTH_FROM.format(cmd))
+            logger.info(START_AGTH_FROM.format(agth, opt))
             subprocess.Popen([agth]+opt.split(' '))
         # endregion
     # endregion
