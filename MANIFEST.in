@@ -2,4 +2,6 @@ include LICENSE
 include README.md
 include README.zh-CN.md
 include cp2trans/config.ini
+include requirements.txt
+include config.example.ini
 recursive-include cp2trans/lang *

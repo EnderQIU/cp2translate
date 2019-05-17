@@ -18,7 +18,7 @@
 7. 安装依赖 `pip install -r requirements.txt`。通常中文系统会因为编码问题在安装`romkan`这个包时失败。网上的`chcp`命令或者是 `locale.setdefaultencoding()`一般解决不了这个问题。我建议下载[romkan 源码](https://github.com/soimort/python-romkan)然后替换第12行的
  `README = open(os.path.join(here, 'README.rst')).read()`为 `README = open(os.path.join(here, 'README.rst'), encoding="utf-8").read()`，然后用 `python .\setup.py install`手动安装。
 8. 复制一份 `config.ini.example`文件然后重命名为 `config.ini`。填写有道智云的 `appid`和 `secretkey`，这个有道智云的App需要具有自然语言翻译的接口调用权限。
-9. 安装完成，使用`python .\cp2trans.py`运行脚本。
+9. 安装完成，使用`python .\cp2trans.py`运行脚本，或者您可以用`python setup.py install`安装。
 
 ## 用法
 

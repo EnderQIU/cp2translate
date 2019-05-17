@@ -11,12 +11,10 @@ class BuildCommand(install):
     """
 
     def run(self):
-        language = None
-        while language not in ('en', 'zh-CN'):
-            language = input('Set application language [en/zh-CN]: ')
-        appid = input('Your Youdao APPID: ')
-        secretkey = input('Your Youdao APP secret: ')
-        neologd = input('Your neologd dictionary path: ')
+        language = 'zh-CN'
+        appid = 'your_app_id'
+        secretkey ='your_secret_key'
+        neologd = 'C:\\neologd'
         config = configparser.ConfigParser()
         if not os.path.isfile(os.path.join(BASE_DIR, 'config.example.ini')):
             print('"config.example.ini" not found. Exit.')
@@ -30,7 +28,7 @@ class BuildCommand(install):
         with open(os.path.join(BASE_DIR, 'cp2trans', 'config.ini'), 'w') as f:
             config.write(f)
         install.do_egg_install(self)
-        print('You can edit configurations in "config.ini" from directory '
+        print('You should edit configurations in "config.ini" from directory '
               '"PYTHON_HOME\\Lib\\site-packages\cp2trans-*-*.egg\\cp2trans\\".')
         print('Please perform some post-install steps follow the instructions on "README.md"'
               ' from https://github.com/EnderQIU/ppat to complete the install process.')
@@ -43,7 +41,7 @@ with open(os.path.join(BASE_DIR, 'README.md'), encoding='utf8') as f:
     README = f.read()
 
 setup(name='cp2trans',
-      version='1.0.1',
+      version='1.0.5',
       description='Clipboard to translate.',
       long_description=README,
       long_description_content_type='text/markdown',
