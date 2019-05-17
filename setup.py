@@ -3,7 +3,7 @@ import configparser
 from setuptools import setup, find_packages
 from setuptools.command.install import install
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 
 class BuildCommand(install):
     """
@@ -30,23 +30,32 @@ class BuildCommand(install):
         with open(os.path.join(BASE_DIR, 'cp2trans', 'config.ini'), 'w') as f:
             config.write(f)
         install.do_egg_install(self)
-        print('You can edit configurations in "config.ini" from directory'
+        print('You can edit configurations in "config.ini" from directory '
               '"PYTHON_HOME\\Lib\\site-packages\cp2trans-*-*.egg\\cp2trans\\".')
+        print('Please perform some post-install steps follow the instructions on "README.md"'
+              ' from https://github.com/EnderQIU/ppat to complete the install process.')
 
 
 install_requires = []
 
-with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'requirements.txt')) as f:
+with open(os.path.join(BASE_DIR, 'requirements.txt'), encoding='utf8') as f:
     install_requires = f.read().splitlines()
+
+README = ''
+
+with open(os.path.join(BASE_DIR, 'README.md'), encoding='utf8') as f:
+    README = f.read()
 
 setup(name='cp2trans',
       version='1.0',
       description='Clipboard to translate.',
-      keywords = 'clipboard translate',
+      long_description=README,
+      long_description_content_type="text/markdown",
+      keywords='clipboard translate',
       author='EnderQIU',
       author_email='a934560824@gmail.com',
       license='GPLv3',
-      url='https://github.com/EnderQIU/ppat',
+      url='https://github.com/EnderQIU/cp2translate',
       install_requires=install_requires,
       packages=['cp2trans'],
       entry_points={
@@ -55,5 +64,14 @@ setup(name='cp2trans',
           ],
       },
       include_package_data=True,
-      cmdclass={'install': BuildCommand}
+      cmdclass={'install': BuildCommand},
+      classifiers=[
+        'Development Status :: 4 - Beta',
+        'Operating System :: Microsoft :: Windows :: Windows 10',
+        'Intended Audience :: End Users/Desktop',
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Topic :: Utilities'
+    ],
 )
