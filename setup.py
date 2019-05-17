@@ -36,21 +36,17 @@ class BuildCommand(install):
               ' from https://github.com/EnderQIU/ppat to complete the install process.')
 
 
-install_requires = []
-
 with open(os.path.join(BASE_DIR, 'requirements.txt'), encoding='utf8') as f:
     install_requires = f.read().splitlines()
-
-README = ''
 
 with open(os.path.join(BASE_DIR, 'README.md'), encoding='utf8') as f:
     README = f.read()
 
 setup(name='cp2trans',
-      version='1.0',
+      version='1.0.1',
       description='Clipboard to translate.',
       long_description=README,
-      long_description_content_type="text/markdown",
+      long_description_content_type='text/markdown',
       keywords='clipboard translate',
       author='EnderQIU',
       author_email='a934560824@gmail.com',

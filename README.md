@@ -1,9 +1,11 @@
 # cp2trans
+
 Translate text from clipboard.
 
 - [中文文档](README.zh-CN.md)
 
 ## Installation
+
 This script is written for Windows. Believe it's a hard way to setup but an easy one to use :).
 
 1. Python 37 on Windows 10.

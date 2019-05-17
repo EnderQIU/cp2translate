@@ -1,9 +1,11 @@
 # cp2trans
+
 翻译来自剪贴板的文本内容。您需要将设置`config.ini`文件中`[global]`节的`language`属性为`zh-CN`，将本程序的语言变更为中文。
 
 - [English Document](README.md)
 
 ## 安装
+
 这个软件是配合agth文本提取器使用的，所以仅针对Windows平台测试过，但其余平台应该也能支持。安装过程虽然复杂但是值得一试。
 
 1. 在Windows 10上安装Python37。
