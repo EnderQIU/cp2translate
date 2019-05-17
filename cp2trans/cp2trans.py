@@ -44,6 +44,9 @@ CONFIG_INI = 'config.ini'
 API_TOLERATED_DELAY = 1.0  # If API request period is greater than it, log an info.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 config = configparser.ConfigParser()
+if not os.path.isfile(os.path.join(BASE_DIR, 'config.ini')):
+    print('"config.ini" not found.')
+    exit(1)
 config.read(os.path.join(BASE_DIR, CONFIG_INI), encoding='utf8')
 # endregion
 
@@ -284,10 +287,10 @@ def passwd(filepath):
                 logger.error(PASSWORD_NOT_SPECIFIED.format(filepath))
                 exit(1)
         new_filepath = rename(filepath, '(encrypted)')
+        password = getpass.getpass(INPUT_PASSWORD_TO_ENCRYPT.format(filepath))
         logger.info(SAVING_TO_PLEASE_WAIT.format(new_filepath))
         with open(new_filepath, 'wb') as f:
-            password = getpass.getpass(INPUT_PASSWORD_TO_ENCRYPT.format(filepath))
-            f.write(encrypt(json.dumps(log).encode(ascii), password))
+            f.write(encrypt(json.dumps(log), password))
         logger.info(DONE)
     elif target == 'D':
         password = getpass.getpass(INPUT_PASSWORD_TO_DECRYPT.format(filepath))
