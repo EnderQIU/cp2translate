@@ -42,14 +42,17 @@ TEST_STRING = '8月3日に放送された「中居正広の金曜日のスマイ
               'ぽっこりおなかを解消するというダイエット方法を紹介。キンタロー。のダイエットにも密着。'
 CONFIG_INI = 'config.ini'
 API_TOLERATED_DELAY = 1.0  # If API request period is greater than it, log an info.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 config = configparser.ConfigParser()
-config.read(os.path.join(os.path.dirname(__file__), CONFIG_INI), encoding='utf8')
+config.read(os.path.join(BASE_DIR, CONFIG_INI), encoding='utf8')
 # endregion
 
 # region i18n
-i18n.load_path.append(os.path.join(os.path.dirname(__file__), 'lang'))
+i18n.load_path.append(os.path.join(BASE_DIR, 'lang'))
 i18n.set('filename_format', '{locale}.{format}')
 i18n.set('locale', config.get('global', 'language'))
+i18n.set('error_on_missing_translation', True)
+i18n.set('file_format', 'yml')
 # Only logger.info and print content supports l18n.
 PROGRAM_DESCRIPTION = i18n.t('PROGRAM_DESCRIPTION')
 YOUDAO_API_ERROR = i18n.t('YOUDAO_API_ERROR')
@@ -91,8 +94,8 @@ HELP_OPT = i18n.t('HELP_OPT')
 # region global vars
 aws_client = boto3.client('translate')
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
-if not os.path.exists(os.path.join(os.path.dirname(__file__), CONFIG_INI)):
+logging.basicConfig(level=config.getint('global', 'log_level', fallback=logging.INFO))
+if not os.path.exists(os.path.join(BASE_DIR, CONFIG_INI)):
     logger.error(FILE_NOT_FOUND.format(CONFIG_INI))
     exit(1)
 try:
@@ -126,7 +129,7 @@ parser.add_argument('-l', '--log', dest='log', metavar='log_file', help=HELP_LOG
 parser.add_argument('-e', '--encrypt', dest='encrypt', metavar='password', help=HELP_ENCRYPT)
 # endregion
 # region tts
-parser.add_argument('-v', '--voice', dest='voice', choices=('0', '1',), default='0', help=HELP_TTS)
+parser.add_argument('-v', '--voice', dest='voice', choices=('0', '1',), default=None, help=HELP_TTS)
 parser.add_argument('-m', '--match', dest='match', metavar='pattern', default=None, help=HELP_MATCH)
 # endregion
 # region translation
@@ -309,11 +312,13 @@ def passwd(filepath):
 def main_loop(profile):
     paste = pyperclip.paste()
     tts_thread = None
+    logger.info('Start monitoring clipboard...')
     while True:
         if paste == pyperclip.paste():
             logger.debug('Same paste, continue...')
             continue
         paste = pyperclip.paste()
+        logger.debug('A different detected.')
         # region from log
         if paste in profile.log:
             logger.debug('Found paste from log. Use record.')
@@ -413,11 +418,11 @@ class Profile:
         # region overwrite options
         if section:
             if not config.has_section(section):
-                logger.error(SECTION_NOT_FOUND.format(args.profile))
+                logger.error(SECTION_NOT_FOUND.format(section))
                 exit(1)
             log = config.get(section, 'log', fallback=section+'.json')
             encrypt = config.get(section, 'encrypt', fallback=None)
-            voice = config.get(section, 'voice', fallback='0')
+            voice = config.get(section, 'voice', fallback=None)
             match = config.get(section, 'match', fallback=None)
             disable = config.get(section, 'disable', fallback=False)
             source = config.get(section, 'source', fallback='ja')
@@ -437,14 +442,14 @@ class Profile:
         elif log:
             self._log_filename = log
             if encrypt:
-                with open(os.path.join(os.path.dirname(__file__), log), 'rb') as f:
+                with open(log, 'rb') as f:
                     try:
                         self._log = json.loads(decrypt(f.read(), encrypt))
                     except (UnicodeDecodeError, json.decoder.JSONDecodeError):
                         logger.error(WRONG_PASSWORD.format(log))
                         exit(1)
             else:
-                with open(os.path.join(os.path.dirname(__file__), log), 'r') as f:
+                with open(log, 'r') as f:
                     try:
                         self._log = json.loads(f.read())
                     except (UnicodeDecodeError, json.decoder.JSONDecodeError):
@@ -452,8 +457,8 @@ class Profile:
                         exit(1)
         else:
             self._log_filename = DEFAULT_SECTION + '.json'
-            if os.path.exists(os.path.join(os.path.dirname(__file__), self._log_filename)):
-                with open(os.path.join(os.path.dirname(__file__), self._log_filename), 'r+') as f:
+            if os.path.exists(self._log_filename):
+                with open(self._log_filename, 'r+') as f:
                     self._log = json.loads(f.read())
             else:
                 self._log = {}
@@ -609,8 +614,8 @@ class Profile:
 # endregion
 
 
-# region program entry
-if __name__ == "__main__":
+# region main
+def main():
     args = parser.parse_args(sys.argv[1:])
     if args.passwd:
         passwd(args.passwd)
@@ -623,4 +628,10 @@ if __name__ == "__main__":
         logger.info(SAVING_TO_PLEASE_WAIT.format(profile.log_filename))
         profile.save_log()  # save log in disk.
         logger.info(DONE)
+# endregion
+
+
+# region program entry
+if __name__ == "__main__":
+    main()
 # endregion
