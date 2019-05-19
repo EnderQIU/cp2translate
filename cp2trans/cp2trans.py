@@ -74,6 +74,8 @@ INPUT_OLD_PASSWORD = i18n.t('INPUT_OLD_PASSWORD')
 INPUT_NEW_PASSWORD = i18n.t('INPUT_NEW_PASSWORD')
 INPUT_PASSWORD_TO_ENCRYPT = i18n.t('INPUT_PASSWORD_TO_ENCRYPT')
 INPUT_PASSWORD_TO_DECRYPT = i18n.t('INPUT_PASSWORD_TO_DECRYPT')
+START_MONITORING = i18n.t('START_MONITORING')
+OVER_CHARACTERS = i18n.t('OVER_CHARACTERS')
 DONE = i18n.t('DONE')
 START_AGTH_FROM = i18n.t('START_AGTH_FROM')
 INVALID_TARGET = i18n.t('INVALID_TARGET')
@@ -86,6 +88,7 @@ HELP_LOG = i18n.t('HELP_LOG')
 HELP_ENCRYPT = i18n.t('HELP_ENCRYPT')
 HELP_TTS = i18n.t('HELP_TTS')
 HELP_MATCH = i18n.t('HELP_MATCH')
+HELP_NUMBER = i18n.t('HELP_NUMBER')
 HELP_SOURCE = i18n.t('HELP_SOURCE')
 HELP_TARGET = i18n.t('HELP_TARGET')
 HELP_DISABLE = i18n.t('HELP_DISABLE')
@@ -136,6 +139,7 @@ parser.add_argument('-v', '--voice', dest='voice', choices=('0', '1',), default=
 parser.add_argument('-m', '--match', dest='match', metavar='pattern', default=None, help=HELP_MATCH)
 # endregion
 # region translation
+parser.add_argument('-n', '--number', dest='number', metavar='number', type=int, default=256, help=HELP_NUMBER)
 parser.add_argument('-s', '--source', dest='source', metavar='lang_code', default='ja', help=HELP_SOURCE)
 parser.add_argument('-t', '--target', dest='target', metavar='lang_code', default='zh-CHS,en', help=HELP_TARGET)
 parser.add_argument('-d', '--disable', dest='disable', action='store_true', default=False, help=HELP_DISABLE)
@@ -315,25 +319,34 @@ def passwd(filepath):
 def main_loop(profile):
     paste = pyperclip.paste()
     tts_thread = None
-    logger.info('Start monitoring clipboard...')
+    count = 0
+    logger.debug(profile.print_config())
+    logger.info(START_MONITORING)
     while True:
         if paste == pyperclip.paste():
-            logger.debug('Same paste, continue...')
+            count += 1
+            logger.debug('[{}] Same paste, continue...'.format(count))
+            time.sleep(profile.interval)
             continue
         paste = pyperclip.paste()
+        if len(paste) > profile.number:
+            logger.info(OVER_CHARACTERS.format(profile.number))
+            time.sleep(profile.interval)
+            continue
+        count = 0
         logger.debug('A different detected.')
         # region from log
         if paste in profile.log:
             logger.debug('Found paste from log. Use record.')
-            print(DIVIDING_TITLE.format('SOURCE (from log)'))
-            print(profile.log[paste]['source'])
+            print(DIVIDING_TITLE.format('SOURCE (from log)'), flush=True)
+            print(profile.log[paste]['source'], flush=True)
             if 'romkan' in profile.log[paste]:
-                print(DIVIDING_TITLE.format('ROMKAN (from log)'))
-                print(profile.log[paste]['romkan'])
-            print(DIVIDING_TITLE.format('YOUDAO (from log)'))
-            print(profile.log[paste]['youdao'])
-            print(DIVIDING_TITLE.format('AWS (from log)'))
-            print(profile.log[paste]['aws'])
+                print(DIVIDING_TITLE.format('ROMKAN (from log)'), flush=True)
+                print(profile.log[paste]['romkan'], flush=True)
+            print(DIVIDING_TITLE.format('YOUDAO (from log)'), flush=True)
+            print(profile.log[paste]['youdao'], flush=True)
+            print(DIVIDING_TITLE.format('AWS (from log)'), flush=True)
+            print(profile.log[paste]['aws'], flush=True)
             if profile.voice:
                 if profile.match and re.search(profile.match, paste) or profile.match is None:
                     logger.debug('"{}" matches in paste. Continue...'.format(profile.match))
@@ -345,17 +358,17 @@ def main_loop(profile):
                     logger.debug('TTS process starts.')
                 else:
                     logger.debug('"{}" does not match in paste. Pass...'.format(profile.match))
-            print(DIVIDING_LINE)
+            print(DIVIDING_LINE, flush=True)
             continue
         # endregion
         # region source
-        print(DIVIDING_TITLE.format('SOURCE'))
+        print(DIVIDING_TITLE.format('SOURCE'), flush=True)
         if profile.source == 'ja':
             source = mecab_wakati.parse(paste).rstrip()
-            print(source)  # rstrip() to remove ' \n' at the end.
+            print(source, flush=True)  # rstrip() to remove ' \n' at the end.
         else:
             source = paste
-            print(source)
+            print(source, flush=True)
         # endregion
         # region tts
         if profile.voice:
@@ -372,29 +385,29 @@ def main_loop(profile):
         # endregion
         # region romkan
         if profile.source == 'ja':
-            print(DIVIDING_TITLE.format('ROMKAN'))
+            print(DIVIDING_TITLE.format('ROMKAN'), flush=True)
             chasen_list, roma_text = mecab_chasen.parse(paste), ''
             for line in chasen_list.split('\n'):
                 if line != '' and line != 'EOS':
                     items = line.split('\t')
                     roma_text += romkan.to_roma(items[1]) + ' '
-            print(roma_text)
+            print(roma_text, flush=True)
         else:
             roma_text = None
         # endregion
         # region youdao
-        print(DIVIDING_TITLE.format('YOUDAO'))
+        print(DIVIDING_TITLE.format('YOUDAO'), flush=True)
         youdao = youdao_translate(paste, target=profile.target[0], source=profile.source)
-        print(youdao)
+        print(youdao, flush=True)
         # endregion
         # region aws
-        print(DIVIDING_TITLE.format('AWS'))
+        print(DIVIDING_TITLE.format('AWS'), flush=True)
         if profile.disable:
             logger.info('The "--disable" option is set. Pass aws translate.')
             aws = None
         else:
             aws = aws_translate(paste, target=profile.target[1], source=profile.source)
-            print(aws)
+            print(aws, flush=True)
         # endregion
         # region save log (in memory)
         profile.log[paste] = {}
@@ -403,8 +416,7 @@ def main_loop(profile):
         profile.log[paste]['youdao'] = youdao
         profile.log[paste]['aws'] = aws
         # endregion
-        print(DIVIDING_LINE)
-        time.sleep(profile.interval)
+        print(DIVIDING_LINE, flush=True)
 # endregion
 
 
@@ -428,6 +440,7 @@ class Profile:
             voice = config.get(section, 'voice', fallback=None)
             match = config.get(section, 'match', fallback=None)
             disable = config.get(section, 'disable', fallback=False)
+            number = config.getint(section, 'number', fallback=256)
             source = config.get(section, 'source', fallback='ja')
             target = config.get(section, 'target', fallback='zh-CHS,en')
             interval = config.getfloat(section, 'interval', fallback=1.0)
@@ -472,8 +485,9 @@ class Profile:
         self._voice = voice
         self._match = match
         # endregion
-        # region init disable, source, target
+        # region init disable, number, source, target
         self._disable = disable
+        self._number = number
         if source not in SOURCE_ALL:
             logger.error('--source option "{}" is not supported.'.format(source))
             exit(1)
@@ -562,6 +576,14 @@ class Profile:
         logger.warning(ACCESS_READONLY_PROPERTY.format('disable'))
 
     @property
+    def number(self):
+        return self._number
+
+    @number.setter
+    def number(self, value):
+        logger.warning(ACCESS_READONLY_PROPERTY.format('number'))
+
+    @property
     def source(self):
         return self._source
 
@@ -613,6 +635,22 @@ class Profile:
         else:
             with open(self._log_filename, 'w') as f:
                 f.write(json.dumps(self._log))
+
+    def print_config(self):
+        return """
+        log = {}
+        encrypt = {}
+        voice = {}
+        match = {}
+        disable = {}
+        number = {}
+        source = {}
+        target = {}
+        interval = {}
+        agth = {}
+        opt = {}
+        """.format(self.log, self.encrypt, self.voice, self.match, self.disable, self.number, self.source, self.target,
+                   self.interval, self.agth, self.opt)
     # endregion
 # endregion
 

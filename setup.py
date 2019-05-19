@@ -41,7 +41,7 @@ with open(os.path.join(BASE_DIR, 'README.md'), encoding='utf8') as f:
     README = f.read()
 
 setup(name='cp2trans',
-      version='1.0.6',
+      version='1.0.7',
       description='Clipboard to translate.',
       long_description=README,
       long_description_content_type='text/markdown',
