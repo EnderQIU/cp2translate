@@ -20,6 +20,15 @@
 8. 复制一份 `config.ini.example`文件然后重命名为 `config.ini`。填写有道智云的 `appid`和 `secretkey`，这个有道智云的App需要具有自然语言翻译的接口调用权限。
 9. 安装完成，使用`python .\cp2trans.py`运行脚本，或者您可以用`python setup.py install`安装。
 
+- “简易”安装方式：
+```
+pip install cp2trans
+```
+
+## 升级
+
+注意升级之前备份 config.ini，它将会在升级后被覆盖。
+
 ## 用法
 
 你可以使用 `-h` 选项来查看脚本支持的功能。将`config.ini`文件中`[global]`节的`language`属性设置为`zh-CN`，将本程序的语言变更为中文。
@@ -27,8 +36,9 @@
 ```powershell
 PS C:\cp2translate> python .\cp2trans.py -h
 usage: cp2trans [-h] [--passwd log_file] [-p section] [-l log_file]
-                [-e password] [-v {0,1}] [-m pattern] [-s lang_code]
-                [-t lang_code] [-d] [-i seconds] [-a agth_path] [-o agth_opts]
+                [-e password] [-v {0,1}] [-m pattern] [-n number]
+                [-s lang_code] [-t lang_code1,lang_code2,lang_code3] [-d]
+                [-i seconds] [-a agth_path] [-o agth_opts]
 
 翻译来自剪贴板的内容。
 
@@ -46,12 +56,14 @@ optional arguments:
                         TTS 所使用的语音。"0" 代表男性发音，"1"代表女性发音。不设置此选项则不会启用 TTS 功能。
   -m pattern, --match pattern
                         仅当源文本匹配 pattern 时进行 TTS。
+  -n number, --number number
+                        仅当剪贴板字符个数小于此值时翻译。
   -s lang_code, --source lang_code
                         源文字语言代码。仅当此选项为 "ja" 时，会显示罗马音。
-  -t lang_code, --target lang_code
-                        目标语言代码。前一个目标语言使用有道智云 API，后一个使用 AWS Translate API。
-  -d, --disable         激活此选项以在网络状况不佳的情况下禁用 AWS Translate
-                        APT。如果这样做也会导致记录不会被保存至磁盘（但会暂存于内存）。
+  -t lang_code1,lang_code2,lang_code3, --target lang_code1,lang_code2,lang_code3
+                        三个目标语言代码，分别被有道智云 API 、AWS 翻译引擎和 Google 翻译 API
+                        使用。之间使用半角逗号隔开。
+  -d, --disable         去使能相应的翻译引擎，相应的结果将会被存储为null。
   -i seconds, --interval seconds
                         检查剪贴板内容是否发生变化的时间间隔。
   -a agth_path, --agth agth_path

@@ -25,13 +25,16 @@ class BuildCommand(install):
         config.set('global', 'secretkey', secretkey)
         config.set('global', 'neologd', neologd)
         config.set('global', 'log_level', '20')
+        confirm = 'N'
+        while confirm != 'y':
+            confirm = input('You should backup your config.ini manually if it has been modified. Done? [y/N]')
         with open(os.path.join(BASE_DIR, 'cp2trans', 'config.ini'), 'w') as f:
             config.write(f)
         install.do_egg_install(self)
         print('You should edit configurations in "config.ini" from directory '
               '"PYTHON_HOME\\Lib\\site-packages\cp2trans-*-*.egg\\cp2trans\\".')
         print('Please perform some post-install steps follow the instructions on "README.md"'
-              ' from https://github.com/EnderQIU/ppat to complete the install process.')
+              ' from https://github.com/EnderQIU/cp2translate to complete the install process.')
 
 
 with open(os.path.join(BASE_DIR, 'requirements.txt'), encoding='utf8') as f:
@@ -41,7 +44,7 @@ with open(os.path.join(BASE_DIR, 'README.md'), encoding='utf8') as f:
     README = f.read()
 
 setup(name='cp2trans',
-      version='1.0.7',
+      version='1.1.0',
       description='Clipboard to translate.',
       long_description=README,
       long_description_content_type='text/markdown',

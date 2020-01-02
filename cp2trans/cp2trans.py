@@ -4,6 +4,7 @@ import re
 import sys
 import time
 import json
+import uuid
 import urllib
 import random
 import getpass
@@ -24,6 +25,7 @@ import requests
 import pyperclip
 from Crypto.Cipher import AES
 from pydub.playback import play
+from google.cloud import translate_v3beta1 as translate
 
 
 # region consts
@@ -60,6 +62,8 @@ i18n.set('file_format', 'yml')
 PROGRAM_DESCRIPTION = i18n.t('PROGRAM_DESCRIPTION')
 YOUDAO_API_ERROR = i18n.t('YOUDAO_API_ERROR')
 YOUDAO_TTS_ERROR = i18n.t('YOUDAO_TTS_ERROR')
+AWS_API_ERROR = i18n.t('AWS_API_ERROR')
+GOOGLE_API_ERROR = i18n.t('GOOGLE_API_ERROR')
 CREATE_A_NOT_EXISTS_FILE  = i18n.t('CREATE_A_NOT_EXISTS_FILE')
 ACCESS_READONLY_PROPERTY = i18n.t('ACCESS_READONLY_PROPERTY')
 WRONG_PASSWORD = i18n.t('WRONG_PASSWORD')
@@ -120,6 +124,8 @@ if not os.path.exists(neologd_path):
     exit(1)
 mecab_wakati = MeCab.Tagger('-Owakati -d '+neologd_path)
 mecab_chasen = MeCab.Tagger('-Ochasen -d '+neologd_path)
+client = translate.TranslationServiceClient()
+parent = client.location_path('cp2trans-jp', 'global')
 # endregion
 
 # region argparse
@@ -141,7 +147,7 @@ parser.add_argument('-m', '--match', dest='match', metavar='pattern', default=No
 # region translation
 parser.add_argument('-n', '--number', dest='number', metavar='number', type=int, default=256, help=HELP_NUMBER)
 parser.add_argument('-s', '--source', dest='source', metavar='lang_code', default='ja', help=HELP_SOURCE)
-parser.add_argument('-t', '--target', dest='target', metavar='lang_code', default='zh-CHS,en', help=HELP_TARGET)
+parser.add_argument('-t', '--target', dest='target', metavar='lang_code1,lang_code2,lang_code3', default='zh-CHS,en', help=HELP_TARGET)
 parser.add_argument('-d', '--disable', dest='disable', action='store_true', default=False, help=HELP_DISABLE)
 # endregion
 # region text hook
@@ -153,33 +159,45 @@ parser.add_argument('-o', '--opt', dest='opt', metavar='agth_opts', default='', 
 
 
 # region functions
-def gen_salt_and_sign(text):
-    salt = random.randint(1, 65536)
-    sign = appid + text + str(salt) + secretkey
-    m1 = hashlib.md5()
-    m1.update(sign.encode('utf-8'))
-    sign = m1.hexdigest()
-    return str(salt), sign
+def youdao_encrypt(sign_str):
+    hash_algorithm = hashlib.sha256()
+    hash_algorithm.update(sign_str.encode('utf-8'))
+    return hash_algorithm.hexdigest()
 
+def youdao_truncate(q):
+    if q is None:
+        return None
+    size = len(q)
+    return q if size <= 20 else q[0:10] + str(size) + q[size - 10:size]
 
 def youdao_translate(text, target='zh-CHS', source='ja'):
-    salt, sign = gen_salt_and_sign(text)
-    params = {
-        'appKey': appid,
-        'q': urllib.parse.quote(text.encode('utf-8')),
+    curtime = str(int(time.time()))
+    salt = str(uuid.uuid1())
+    sign_str = appid + youdao_truncate(text) + salt + curtime + secretkey
+    sign = youdao_encrypt(sign_str)
+    data = {
         'from': source,
         'to': target,
+        'signType': 'v3',
+        'curtime': curtime,
+        'appKey': appid,
+        'q': text,
         'salt': salt,
-        'sign': sign,
+        'sign': sign
     }
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    r = requests.post(YOUDAO_API_HTTPS, data=data, headers=headers)
     start_time = datetime.now()
-    r = requests.get(YOUDAO_API_HTTPS, params=params)
     period = (datetime.now() - start_time).seconds
     logger.debug('Youdao API finished API request in {} seconds'.format(period))
     if period > API_TOLERATED_DELAY:
         logger.info(REQUEST_FINISHED_IN.format('Youdao API', period))
     if r.ok and 'application/json' in r.headers['Content-type']:
-        return json.loads(r.text)['translation'][0]
+        j = json.loads(r.text)
+        if 'translation' in j.keys() and len(j['translation']) > 0:
+            return json.loads(r.text)['translation'][0]
+        else:
+            logger.error(YOUDAO_API_ERROR.format(r.text))
     else:
         logger.error(YOUDAO_API_ERROR.format(r.status_code))
         return None
@@ -188,18 +206,19 @@ def youdao_translate(text, target='zh-CHS', source='ja'):
 def youdao_tts(text, voice='1', lang_type='ja'):
     if text == '':
         return
-    salt, sign = gen_salt_and_sign(text)
-    params = {
-        'appKey': appid,
-        'q': urllib.parse.quote(text.encode('utf-8')),
+    salt = str(uuid.uuid1())
+    sign_str = appid + text + salt + secretkey
+    sign = youdao_encrypt(sign_str)
+    data = {
         'langType': lang_type,
+        'appKey': appid,
+        'q': text,
         'salt': salt,
-        'sign': sign,
-        'format': 'mp3',
-        'voice': voice
+        'sign': sign
     }
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     start_time = datetime.now()
-    r = requests.get(YOUDAO_TTSAPI_HTTPS, params=params)
+    r = requests.post(YOUDAO_API_HTTPS, data=data, headers=headers)
     period = (datetime.now() - start_time).seconds
     logger.debug('Youdao TTS finished API request in {} seconds'.format(period))
     if period > API_TOLERATED_DELAY:
@@ -225,7 +244,23 @@ def aws_translate(text, target='en', source='ja'):
     logger.debug('AWS finished API request in {} seconds'.format(period))
     if period > API_TOLERATED_DELAY:
         logger.info(REQUEST_FINISHED_IN.format('AWS', period))
-    return result_dict.get('TranslatedText', None)
+    r = result_dict.get('TranslatedText', None)
+    if r == None:
+        logger.error(AWS_API_ERROR.format(str(result_dict)))
+        return None
+    else:
+        return r
+
+
+def google_translate(text, target='zh-CN', source='ja'):
+    response = client.translate_text(parent=parent, contents=[text], mime_type='text/plain', source_language_code=source, target_language_code=target)
+    try:
+        r = response.translations[0].translated_text
+    except Exception:
+        logger.log(GOOGLE_API_ERROR.format(str(response)))
+        return None
+    else:
+        return r
 # endregion
 
 
@@ -314,7 +349,6 @@ def passwd(filepath):
         exit(1)
 # endregion
 
-
 # region main loop
 def main_loop(profile):
     paste = pyperclip.paste()
@@ -330,37 +364,12 @@ def main_loop(profile):
             continue
         paste = pyperclip.paste()
         if len(paste) > profile.number:
+            count = 0
             logger.info(OVER_CHARACTERS.format(profile.number))
             time.sleep(profile.interval)
             continue
         count = 0
         logger.debug('A different detected.')
-        # region from log
-        if paste in profile.log:
-            logger.debug('Found paste from log. Use record.')
-            print(DIVIDING_TITLE.format('SOURCE (from log)'), flush=True)
-            print(profile.log[paste]['source'], flush=True)
-            if 'romkan' in profile.log[paste]:
-                print(DIVIDING_TITLE.format('ROMKAN (from log)'), flush=True)
-                print(profile.log[paste]['romkan'], flush=True)
-            print(DIVIDING_TITLE.format('YOUDAO (from log)'), flush=True)
-            print(profile.log[paste]['youdao'], flush=True)
-            print(DIVIDING_TITLE.format('AWS (from log)'), flush=True)
-            print(profile.log[paste]['aws'], flush=True)
-            if profile.voice:
-                if profile.match and re.search(profile.match, paste) or profile.match is None:
-                    logger.debug('"{}" matches in paste. Continue...'.format(profile.match))
-                    if tts_thread:
-                        tts_thread.kill()
-                        logger.debug('Previous TTS process killed.')
-                    tts_thread = Process(target=youdao_tts, args=(paste, profile.voice, profile.source))
-                    tts_thread.start()
-                    logger.debug('TTS process starts.')
-                else:
-                    logger.debug('"{}" does not match in paste. Pass...'.format(profile.match))
-            print(DIVIDING_LINE, flush=True)
-            continue
-        # endregion
         # region source
         print(DIVIDING_TITLE.format('SOURCE'), flush=True)
         if profile.source == 'ja':
@@ -384,7 +393,10 @@ def main_loop(profile):
                 logger.debug('"{}" does not match in paste. Pass...'.format(profile.match))
         # endregion
         # region romkan
-        if profile.source == 'ja':
+        if paste in profile.log:
+            print(DIVIDING_TITLE.format('ROMKAN (from log)'), flush=True)
+            print(profile.log[paste]['romkan'], flush=True)
+        elif profile.source == 'ja':
             print(DIVIDING_TITLE.format('ROMKAN'), flush=True)
             chasen_list, roma_text = mecab_chasen.parse(paste), ''
             for line in chasen_list.split('\n'):
@@ -396,18 +408,46 @@ def main_loop(profile):
             roma_text = None
         # endregion
         # region youdao
-        print(DIVIDING_TITLE.format('YOUDAO'), flush=True)
-        youdao = youdao_translate(paste, target=profile.target[0], source=profile.source)
-        print(youdao, flush=True)
+        if paste in profile.log and profile.log[paste]['youdao'] is not None:
+            print(DIVIDING_TITLE.format('YOUDAO (from log)'), flush=True)
+            youdao = profile.log[paste]['youdao']
+            print(youdao, flush=True)
+        else:
+            if 'youdao' in profile.disable:
+                logger.info('The "--disable" option is set. Pass youdao translate.')
+                youdao = None
+            else:
+                print(DIVIDING_TITLE.format('YOUDAO'), flush=True)
+                youdao = youdao_translate(paste, target=profile.target[0], source=profile.source)
+                print(youdao, flush=True)
         # endregion
         # region aws
-        print(DIVIDING_TITLE.format('AWS'), flush=True)
-        if profile.disable:
-            logger.info('The "--disable" option is set. Pass aws translate.')
-            aws = None
-        else:
-            aws = aws_translate(paste, target=profile.target[1], source=profile.source)
+        if paste in profile.log and profile.log[paste]['aws'] is not None:
+            print(DIVIDING_TITLE.format('AWS (from log)'), flush=True)
+            aws = profile.log[paste]['aws']
             print(aws, flush=True)
+        else:
+            if 'aws' in profile.disable:
+                logger.info('The "--disable" option is set. Pass aws translate.')
+                aws = None
+            else:
+                print(DIVIDING_TITLE.format('AWS'), flush=True)
+                aws = aws_translate(paste, target=profile.target[1], source=profile.source)
+                print(aws, flush=True)
+        # endregion
+        # region google
+        if paste in profile.log and profile.log[paste]['aws'] is not None:
+            print(DIVIDING_TITLE.format('GOOGLE (from log)'), flush=True)
+            google = profile.log[paste]['google']
+            print(google, flush=True)
+        else:
+            if 'google' in profile.disable:
+                logger.info('The "--disable" option is set. Pass google translate.')
+                google = None
+            else:
+                print(DIVIDING_TITLE.format('GOOGLE'), flush=True)
+                google = google_translate(paste)
+                print(google, flush=True)
         # endregion
         # region save log (in memory)
         profile.log[paste] = {}
@@ -415,6 +455,7 @@ def main_loop(profile):
         profile.log[paste]['romkan'] = roma_text
         profile.log[paste]['youdao'] = youdao
         profile.log[paste]['aws'] = aws
+        profile.log[paste]['google'] = google
         # endregion
         print(DIVIDING_LINE, flush=True)
 # endregion
@@ -439,10 +480,10 @@ class Profile:
             encrypt = config.get(section, 'encrypt', fallback=None)
             voice = config.get(section, 'voice', fallback=None)
             match = config.get(section, 'match', fallback=None)
-            disable = config.get(section, 'disable', fallback=False)
+            disable = config.get(section, 'disable', fallback='')
             number = config.getint(section, 'number', fallback=256)
             source = config.get(section, 'source', fallback='ja')
-            target = config.get(section, 'target', fallback='zh-CHS,en')
+            target = config.get(section, 'target', fallback='zh-CHS,en,zh-CN')
             interval = config.getfloat(section, 'interval', fallback=1.0)
             agth = config.get(section, 'agth', fallback=None)
             opt = config.get(section, 'opt', fallback='')
@@ -492,7 +533,7 @@ class Profile:
             logger.error('--source option "{}" is not supported.'.format(source))
             exit(1)
         targets = target.split(',')
-        if len(targets) != 2:
+        if len(targets) != 3:
             logger.error('--target option "{}" format error.'.format(target))
             exit(1)
         if targets[0] not in TARGET_YOUDAO:
@@ -626,9 +667,9 @@ class Profile:
 
     # region public functions
     def save_log(self):
-        if self._disable:
-            logger.info(LOG_WONT_BE_SAVED)
-            return
+        # if self._disable:
+        #     logger.info(LOG_WONT_BE_SAVED)
+        #     return
         if self._encrypt:
             with open(self._log_filename, 'wb') as f:
                 f.write(encrypt(json.dumps(self._log), self.encrypt))

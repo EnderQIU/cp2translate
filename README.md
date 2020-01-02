@@ -17,7 +17,7 @@ This script is written for Windows. Believe it's a hard way to setup but an easy
  `/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd` into `C:\neologd\` if you want the newest dictionary.
  [Here](neologd/)'s a pre-built dictionary on 2019-05-11.
 6. **NOTICE:** We use `pydub`'s ffmpeg binding to play TTS mp3 audio. If you want to enable TTS, download ffmpeg from
- <https://ffmpeg.zeranoe.com/builds/> or just ignore the warning. We won't save mp3 so you should mind of its costs.
+ <https://ffmpeg.zeranoe.com/builds/> or just ignore the warning. We won't cache audio so you should mind of its costs.
 7. Install requirements by `pip install -r requirements.txt`. If your system default encoding is not UTF-8, you might
  fail on installing the `romkan` package. Usually neither `chcp` nor `locale.setdefaultencoding()` won't solve this
  problem. I suggest manually download [romkan source code](https://github.com/soimort/python-romkan) and replace line 12
@@ -27,13 +27,23 @@ This script is written for Windows. Believe it's a hard way to setup but an easy
  `Natural Language Translation` of this app is enabled.
 9. Run the script by `python .\cp2trans\cp2trans.py` or install `cp2trans` by `python setup.py install` (in this way you can pass step 8).
 
+- The easier way if your computer has been configured:
+```
+pip install cp2trans
+```
+
+## Upgrade
+
+Be sure to backup your config.ini before upgrading. It will be overwritten.
+
 ## Usage
 
 ```powershell
 PS C:\cp2translate> python .\cp2trans.py -h
 usage: cp2trans [-h] [--passwd log_file] [-p section] [-l log_file]
-                [-e password] [-v {0,1}] [-m pattern] [-s lang_code]
-                [-t lang_code] [-d] [-i seconds] [-a agth_path] [-o agth_opts]
+                [-e password] [-v {0,1}] [-m pattern] [-n number]
+                [-s lang_code] [-t lang_code1,lang_code2,lang_code3] [-d]
+                [-i seconds] [-a agth_path] [-o agth_opts]
 
 Clipboard to Translate.
 
@@ -57,15 +67,17 @@ optional arguments:
                         for disable TTS.
   -m pattern, --match pattern
                         Only TTS when match <pattern>.
+  -n number, --number number
+                        Translate only if number of characters less than
+                        <number>.
   -s lang_code, --source lang_code
                         Source language code. Romkan will only be shown with
                         "ja".
-  -t lang_code, --target lang_code
-                        Primary uses Youdao API and the secondary by AWS
-                        translate API.
-  -d, --disable         Disable AWS translate api in low network connection
-                        environment. Log won't be recorded into disk (but will
-                        be in memory) if set.
+  -t lang_code1,lang_code2,lang_code3, --target lang_code1,lang_code2,lang_code3
+                        Three target language codes used by youdao, aws and
+                        google. Separated by comma.
+  -d, --disable         Disable specified translate engine. Corresponding
+                        results will be saved as null
   -i seconds, --interval seconds
                         Time interval in seconds to check the clipboard.
   -a agth_path, --agth agth_path
