@@ -4,5 +4,5 @@ pyperclip==1.7.0
 requests==2.21.0
 pydub==0.23.1
 pycryptodome==3.8.1
-PyYAML==5.1
+PyYAML==5.4
 python-i18n==0.3.6
